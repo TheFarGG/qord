@@ -25,7 +25,7 @@ from __future__ import annotations
 from qord.core.dispatch import DispatchHandler
 from qord.core.rest import RestClient
 from qord.core.shard import Shard
-from qord.core.cache import DefaultCache, DefaultGuildCache
+from qord.core.cache_impl import DefaultCache, DefaultGuildCache
 from qord.exceptions import ClientSetupRequired
 from qord.flags.intents import Intents
 from qord.models.users import User
@@ -142,6 +142,7 @@ class Client:
         )
         self._event_listeners = {}
         self._setup = False
+        self._closed = True
         self._cache.clear()
 
         self.connect_timeout = connect_timeout
@@ -438,6 +439,8 @@ class Client:
         """
         if not self.is_setup():
             raise ClientSetupRequired("Client is not setup yet. Call Client.setup() first.")
+        if not self._closed:
+            raise RuntimeError("Already running, Close the client first.")
 
         loop = asyncio.get_running_loop()
 
@@ -488,6 +491,7 @@ class Client:
                 await asyncio.sleep(5)
 
         # block until one of the shards crash
+        self._closed = False
         self._notify_shards_launch()
         exc = await asyncio.wait_for(future, timeout=None)
         raise exc
@@ -509,6 +513,9 @@ class Client:
             If set to ``False``, Client setup will not be closed and there
             will be no need of calling :meth:`.setup` again.
         """
+        if self._closed:
+            return
+
         _LOGGER.info("Gracefully closing %s shards.", self._shards_count)
 
         for shard in self._shards.values():
@@ -521,6 +528,8 @@ class Client:
 
         if clear_setup:
             self._reset_setup()
+
+        self._closed = True
 
     def start(self, token: str) -> None:
         r"""Setups the client with provided token and then starts it.

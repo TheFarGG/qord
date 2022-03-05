@@ -25,15 +25,18 @@ from __future__ import annotations
 from qord.flags.users import UserFlags
 from qord.models.base import BaseModel
 from qord.enums import DefaultAvatar
-from qord._helpers import create_cdn_url, get_image_data, EMPTY
+from qord._helpers import create_cdn_url, get_image_data, UNDEFINED, BASIC_EXTS
 
 import typing
 
 if typing.TYPE_CHECKING:
+    from qord.models.messages import Message
+    from qord.models.channels import DMChannel
     from qord.core.client import Client
+    from qord.bases import MessagesSupported
 
 class User(BaseModel):
-    r"""Representation of a Discord user entity.
+    """Representation of a Discord user entity.
 
     Attributes
     ----------
@@ -67,6 +70,7 @@ class User(BaseModel):
     """
 
     if typing.TYPE_CHECKING:
+        _dm: typing.Optional[DMChannel]
         id: int
         name: str
         discriminator: str
@@ -75,15 +79,21 @@ class User(BaseModel):
         accent_color: int
         locale: str
         premium_type: int
+        flags: UserFlags
+        public_flags: UserFlags
+        premium_type: int
         avatar: typing.Optional[str]
         banner: typing.Optional[str]
 
-    __slots__ = ("_client", "id", "name", "discriminator", "bot", "accent_color",
-                "premium_type", "system",  "locale", "avatar", "banner", "flags",
+    __slots__ = ("_client", "_dm", "_rest", "_cache", "id", "name", "discriminator", "bot",
+                "accent_color", "premium_type", "system",  "locale", "avatar", "banner", "flags",
                 "public_flags", "__weakref__")
 
     def __init__(self, data: typing.Dict[str, typing.Any], client: Client) -> None:
         self._client = client
+        self._rest = client._rest
+        self._cache = client._cache
+        self._dm = None
         self._update_with_data(data)
 
     def _update_with_data(self, data: typing.Dict[str, typing.Any]) -> None:
@@ -102,7 +112,7 @@ class User(BaseModel):
 
     @property
     def default_avatar(self) -> int:
-        r"""Returns the default avatar index for this user.
+        """Returns the default avatar index for this user.
 
         This index integer is calculated on the basis of user's
         :attr:`.discriminator`. See :class:`DefaultAvatar` for
@@ -114,8 +124,43 @@ class User(BaseModel):
         """
         return int(self.discriminator) % DefaultAvatar.INDEX
 
+    @property
+    def proper_name(self) -> str:
+        """Returns the proper name for this user as ``username#discriminator``.
+
+        Returns
+        -------
+        :class:`builtins.str`
+        """
+        return f"{self.name}#{self.discriminator}"
+
+    @property
+    def mention(self) -> str:
+        """Returns the string used for mentioning this user in Discord.
+
+        Returns
+        -------
+        :class:`builtins.str`
+        """
+        return f"<@!{self.id}>"
+
+    @property
+    def dm(self) -> typing.Optional[DMChannel]:
+        """Returns the DM channel that belongs to the user.
+
+        This may return ``None`` if no DM channel is currently
+        cached for this user. Instead of using this property,
+        Consider using the :meth:`.create_dm` method that
+        automatically handles caching for DM channels.
+
+        Returns
+        -------
+        Optional[:class:`DMChannel`]
+        """
+        return self._dm
+
     def default_avatar_url(self) -> str:
-        r"""Returns the default avatar URL for this user.
+        """Returns the default avatar URL for this user.
 
         Note that default avatar is generated on the basis of
         discriminator and does not implies the user's actual
@@ -132,7 +177,7 @@ class User(BaseModel):
         return create_cdn_url(f"/embed/avatars/{self.default_avatar}", extension="png")
 
     def avatar_url(self, extension: str = None, size: int = None) -> str:
-        r"""Returns the avatar URL for this user.
+        """Returns the avatar URL for this user.
 
         If user has no custom avatar set, This returns the result
         of :meth:`.default_avatar_url`.
@@ -163,12 +208,18 @@ class User(BaseModel):
         """
         if self.avatar is None:
             return self.default_avatar_url()
+        if extension is None:
+            extension = "gif" if self.is_avatar_animated() else "png"
 
-        extension = "gif" if self.is_avatar_animated() else "png"
-        return create_cdn_url(f"/avatars/{self.id}/{self.avatar}", extension=extension, size=size)
+        return create_cdn_url(
+            f"/avatars/{self.id}/{self.avatar}",
+            extension=extension,
+            size=size,
+            valid_exts=BASIC_EXTS,
+        )
 
     def banner_url(self, extension: str = None, size: int = None) -> typing.Optional[str]:
-        r"""Returns the banner URL for this user.
+        """Returns the banner URL for this user.
 
         If user has no custom banner set, ``None`` is returned.
 
@@ -198,12 +249,18 @@ class User(BaseModel):
         """
         if self.banner is None:
             return
+        if extension is None:
+            extension = "gif" if self.is_banner_animated() else "png"
 
-        extension = "gif" if self.is_banner_animated() else "png"
-        return create_cdn_url(f"/banners/{self.id}/{self.banner}", extension=extension, size=size)
+        return create_cdn_url(
+            f"/banners/{self.id}/{self.banner}",
+            extension=extension,
+            size=size,
+            valid_exts=BASIC_EXTS,
+        )
 
     def is_avatar_animated(self) -> bool:
-        r"""Indicates whether the user has animated avatar.
+        """Indicates whether the user has animated avatar.
 
         Having no custom avatar set will also return ``False``.
 
@@ -217,7 +274,7 @@ class User(BaseModel):
         return self.avatar.startswith("a_")
 
     def is_banner_animated(self) -> bool:
-        r"""Indicates whether the user has animated banner.
+        """Indicates whether the user has animated banner.
 
         Having no custom banner set will also return ``False``.
 
@@ -230,9 +287,59 @@ class User(BaseModel):
 
         return self.banner.startswith("a_")
 
+    async def create_dm(self, *, force: bool = False) -> DMChannel:
+        """Creates or gets the direct message channel associated to this user.
+
+        On initial call, The direct message channel is cached and further
+        invocations would return the cached channel unless ``force`` parameter
+        is explicity set to ``True``.
+
+        Parameters
+        ----------
+        force: :class:`builtins.bool`
+            Whether to fetch the channel regardless of current
+            state of cache. Defaults to ``False``.
+
+        Returns
+        -------
+        :class:`DMChannel`
+            The DM channel for this user.
+        """
+        if self._dm is not None and not force:
+            return self._dm
+
+        from qord.models.channels import DMChannel # HACK: circular imports
+
+        data = await self._rest.create_dm(recipient_id=self.id)
+        ret = DMChannel(data, client=self._client)
+        self._dm = ret
+        self._cache.add_private_channel(ret)
+
+        return ret
+
+    async def send(self, *args, **kwargs) -> Message:
+        """A shorthand method for :meth:`DMChannel.send`.
+
+        This method is roughly equivalent to::
+
+            channel = await user.create_dm()
+            await channel.send(*args, **kwargs)
+
+        This method is just a shorthand. It is recommended to use the above
+        way for sending messages to users.
+
+        To perform other operations on DM channels, you should consider
+        retrieving them via the :meth:`.create_dm` method instead.
+
+        The parameters passed to this method are same as :meth:`DMChannel.send`.
+        """
+        dm_channel = await self.create_dm()
+        message = await dm_channel.send(*args, **kwargs)
+        return message
+
 
 class ClientUser(User):
-    r"""Representation of user entity for the connected client.
+    """Representation of user entity for the connected client.
 
     This class also subclasses :class:`User`. You can obtain class using the
     :class:`Client.user` attribute.
@@ -261,8 +368,8 @@ class ClientUser(User):
         self.verified = data.get("verified")
         self.mfa_enabled = data.get("mfa_enabled", False)
 
-    async def edit(self, *, name: str = None, avatar: typing.Optional[bytes] = EMPTY) -> None:
-        r"""Edits the client user.
+    async def edit(self, *, name: str = None, avatar: typing.Optional[bytes] = UNDEFINED) -> None:
+        """Edits the client user.
 
         Parameters
         ----------
@@ -283,7 +390,7 @@ class ClientUser(User):
 
         if name is not None:
             json["username"] = name
-        if avatar is not EMPTY:
+        if avatar is not UNDEFINED:
             if avatar is None:
                 json["avatar"] = None
             else:

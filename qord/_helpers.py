@@ -25,20 +25,21 @@ r"""*Non-public* internal utilities."""
 from __future__ import annotations
 
 from base64 import b64encode
+from datetime import datetime
 import typing
 
 BASE_CDN_URL = "https://cdn.discordapp.com"
+BASIC_STATIC_EXTS = ["png", "jpg", "jpeg", "webp"]
+BASIC_EXTS = ["png", "jpg", "jpeg", "webp", "gif"]
 
-class _Empty:
-    r"""A sentinel class for optional values in HTTPs requests."""
-
+class _Undefined:
     def __eq__(self, o: object) -> bool:
         return False
 
     def __repr__(self) -> str:
         return "..."
 
-EMPTY: typing.Any = _Empty()
+UNDEFINED: typing.Any = _Undefined()
 
 
 def create_cdn_url(path: str, extension: str, size: int = None, valid_exts: typing.List[str] = None):
@@ -46,7 +47,7 @@ def create_cdn_url(path: str, extension: str, size: int = None, valid_exts: typi
 
     if valid_exts is None:
         # Defaulting to general formats used on most endpoints which
-        # are currently gif, png, jpg, webp.
+        # are currently png, jpg, webp.
         # When using with endpoints that have special formats
         # consider passing the valid formats explicitly.
         valid_exts = ["png", "jpeg", "jpg", "webp"]
@@ -92,3 +93,7 @@ def get_image_data(img_bytes: bytes) -> str:
         raise TypeError("Invalid image type was provided.")
 
     return f"data:{content_type};base64,{b64encode(img_bytes).decode('ascii')}"
+
+def parse_iso_timestamp(timestamp: str) -> datetime:
+    r"""Parse ISO timestamp string to a datetime.datetime instance."""
+    return datetime.fromisoformat(timestamp)

@@ -16,6 +16,18 @@ Client
     :members:
 
 
+Abstract Classes
+~~~~~~~~~~~~~~~~
+
+Other classes provided by the library can inherit these classes to implement the
+relevant common functionality.
+
+MessagesSupported
+~~~~~~~~~~~~~~~~~
+
+.. autoclass:: MessagesSupported()
+    :members:
+
 Cache Handlers
 --------------
 
@@ -96,6 +108,18 @@ Ready
 .. autoclass:: qord.events.Ready()
     :members:
 
+Resumed
+~~~~~~~
+
+.. autoclass:: qord.events.Resumed()
+    :members:
+
+UserUpdate
+~~~~~~~~~~
+
+.. autoclass:: qord.events.UserUpdate()
+    :members:
+
 GuildAvailable
 ~~~~~~~~~~~~~~
 
@@ -125,6 +149,101 @@ GuildUpdate
 ~~~~~~~~~~~
 
 .. autoclass:: qord.events.GuildUpdate()
+    :members:
+
+RoleCreate
+~~~~~~~~~~
+
+.. autoclass:: qord.events.RoleCreate()
+    :members:
+
+RoleUpdate
+~~~~~~~~~~
+
+.. autoclass:: qord.events.RoleUpdate()
+    :members:
+
+RoleDelete
+~~~~~~~~~~
+
+.. autoclass:: qord.events.RoleDelete()
+    :members:
+
+GuildMemberAdd
+~~~~~~~~~~~~~~
+
+.. autoclass:: qord.events.GuildMemberAdd()
+    :members:
+
+GuildMemberUpdate
+~~~~~~~~~~~~~~~~~
+
+.. autoclass:: qord.events.GuildMemberUpdate()
+    :members:
+
+GuildMemberRemove
+~~~~~~~~~~~~~~~~~
+
+.. autoclass:: qord.events.GuildMemberRemove()
+    :members:
+
+
+ChannelCreate
+~~~~~~~~~~~~~
+
+.. autoclass:: qord.events.ChannelCreate()
+    :members:
+
+
+ChannelUpdate
+~~~~~~~~~~~~~
+
+.. autoclass:: qord.events.ChannelUpdate()
+    :members:
+
+ChannelPinsUpdate
+~~~~~~~~~~~~~~~~~
+
+.. autoclass:: ChannelPinsUpdate()
+    :members:
+
+ChannelDelete
+~~~~~~~~~~~~~
+
+.. autoclass:: qord.events.ChannelDelete()
+    :members:
+
+TypingStart
+~~~~~~~~~~~
+
+.. autoclass:: qord.events.TypingStart()
+    :members:
+
+MessageCreate
+~~~~~~~~~~~~~
+
+.. autoclass:: qord.events.MessageCreate()
+    :members:
+
+
+MessageUpdate
+~~~~~~~~~~~~~
+
+.. autoclass:: qord.events.MessageUpdate()
+    :members:
+
+
+MessageDelete
+~~~~~~~~~~~~~
+
+.. autoclass:: qord.events.MessageDelete()
+    :members:
+
+
+MessageBulkDelete
+~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: qord.events.MessageBulkDelete()
     :members:
 
 
@@ -182,6 +301,17 @@ ExplicitContentFilter
 .. autoclass:: ExplicitContentFilter()
     :members:
 
+ChannelType
+~~~~~~~~~~~
+
+.. autoclass:: ChannelType()
+    :members:
+
+VideoQualityMode
+~~~~~~~~~~~~~~~~
+
+.. autoclass:: VideoQualityMode()
+    :members:
 
 PremiumTier
 ~~~~~~~~~~~
@@ -211,6 +341,12 @@ Flags
 ~~~~~
 
 .. autoclass:: Flags()
+    :members:
+
+Permissions
+~~~~~~~~~~~
+
+.. autoclass:: Permissions()
     :members:
 
 Intents
@@ -314,5 +450,89 @@ Guild
 ~~~~~
 
 .. autoclass:: Guild()
+    :inherited-members:
+    :members:
+
+GuildMember
+~~~~~~~~~~~
+
+.. autoclass:: GuildMember()
+    :inherited-members:
+    :members:
+
+Role
+~~~~
+
+.. autoclass:: Role()
+    :inherited-members:
+    :members:
+
+GuildChannel
+~~~~~~~~~~~~
+
+.. autoclass:: GuildChannel()
+    :inherited-members:
+    :members:
+
+CategoryChannel
+~~~~~~~~~~~~~~~
+
+.. autoclass:: CategoryChannel()
+    :inherited-members:
+    :members:
+
+TextChannel
+~~~~~~~~~~~
+
+.. autoclass:: TextChannel()
+    :inherited-members:
+    :members:
+
+NewsChannel
+~~~~~~~~~~~
+
+.. autoclass:: NewsChannel()
+    :inherited-members:
+    :members:
+
+VoiceChannel
+~~~~~~~~~~~~
+
+.. autoclass:: VoiceChannel()
+    :inherited-members:
+    :members:
+
+StageChannel
+~~~~~~~~~~~~
+
+.. autoclass:: StageChannel()
+    :inherited-members:
+    :members:
+
+PrivateChannel
+~~~~~~~~~~~~~~
+
+.. autoclass:: PrivateChannel()
+    :inherited-members:
+    :members:
+
+DMChannel
+~~~~~~~~~
+
+.. autoclass:: DMChannel()
+    :inherited-members:
+    :members:
+
+Message
+~~~~~~~
+
+.. autoclass:: Message()
+    :inherited-members:
+    :members:
+
+ChannelMention
+~~~~~~~~~~~~~~
+
+.. autoclass:: ChannelMention()
     :inherited-members:
     :members:

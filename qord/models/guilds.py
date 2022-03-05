@@ -22,20 +22,36 @@
 
 from __future__ import annotations
 
+from qord.core.cache import GuildCache
 from qord.models.base import BaseModel
+from qord.models.roles import Role
+from qord.models.guild_members import GuildMember
+from qord.models.channels import _guild_channel_factory, GuildChannel
 from qord.flags.system_channel import SystemChannelFlags
-from qord._helpers import get_optional_snowflake, create_cdn_url, compute_shard_id
+from qord.enums import ChannelType
+from qord._helpers import (
+    get_optional_snowflake,
+    create_cdn_url,
+    get_image_data,
+    compute_shard_id,
+    parse_iso_timestamp,
+    BASIC_STATIC_EXTS,
+    BASIC_EXTS,
+    UNDEFINED,
+)
 
-from datetime import datetime
 import typing
 
 if typing.TYPE_CHECKING:
-    from qord.core.cache import GuildCache
+    from datetime import datetime
     from qord.core.shard import Shard
     from qord.core.client import Client
+    from qord.flags.permissions import Permissions
+    from qord.models.channels import CategoryChannel, TextChannel, VoiceChannel
+
 
 class Guild(BaseModel):
-    r"""Representation of a Discord guild entity often referred as "Server" in the UI.
+    """Representation of a Discord guild entity often referred as "Server" in the UI.
 
     Attributes
     ----------
@@ -177,7 +193,7 @@ class Guild(BaseModel):
         widget_channel_id: typing.Optional[int]
         system_channel_id: typing.Optional[int]
 
-    __slots__ = ("_client", "_rest", "_cache", "id", "name", "afk_timeout", "premium_subscription_count",
+    __slots__ = ("_client", "_rest", "_cache", "_client_cache", "id", "name", "afk_timeout", "premium_subscription_count",
                 "preferred_locale", "widget_enabled", "large", "unavailable", "system_channel_flags",
                 "premium_progress_bar_enabled", "features", "verification_level", "notification_level",
                 "mfa_level", "premium_tier", "nsfw_level", "member_count", "max_presences", "max_members",
@@ -189,24 +205,19 @@ class Guild(BaseModel):
     def __init__(self, data: typing.Dict[str, typing.Any], client: Client, enable_cache: bool = False) -> None:
         self._client = client
         self._rest = client._rest
-        self._cache = None
-
-        if enable_cache:
-            from qord.core.cache import GuildCache # Hack for circular imports.
-
-            cache = client.get_guild_cache(guild=self)
-
-            if not isinstance(cache, GuildCache):
-                raise TypeError(
-                    f"Client.get_guild_cache() returned an unexpected object of type " \
-                    f"{cache.__class__!r}, Expected a GuildCache instance."
-                )
-
-            cache.clear()
-            self._cache = cache
-
+        self._cache = client.get_guild_cache(guild=self)
+        self._client_cache = client._cache
+        if not isinstance(self._cache, GuildCache):
+            raise TypeError(
+                f"Client.get_guild_cache() returned an unexpected object of type " \
+                f"{self._cache.__class__!r}, Expected a GuildCache instance."
+            )
+        self._cache.clear()
         self._create_guild(data)
         self._update_with_data(data)
+
+    def __del__(self) -> None:
+        self._cache.clear()
 
     def _create_guild(self, data: typing.Dict[str, typing.Any]) -> None:
         # These fields are only sent during initial GUILD_CREATE fields.
@@ -214,21 +225,35 @@ class Guild(BaseModel):
         # are assigned here instead.
 
         joined_at = data.get("joined_at")
-        self.joined_at = datetime.fromisoformat(joined_at) if joined_at is not None else None
+        self.joined_at = parse_iso_timestamp(joined_at) if joined_at is not None else None
         self.large = data.get("large", False)
         self.unavailable = data.get("unavailable", False)
         self.member_count = data.get("member_count")
+
+        cache = self._cache
+        client_cache = self._client_cache
+
+        for raw_role in data.get("roles", []):
+            role = Role(raw_role, guild=self)
+            cache.add_role(role)
+
+        for raw_member in data.get("members", []):
+            member = GuildMember(raw_member, guild=self)
+            cache.add_member(member)
+            client_cache.add_user(member.user)
+
+        for raw_channel in data.get("channels", []):
+            cls = _guild_channel_factory(raw_channel["type"])
+            channel = cls(raw_channel, guild=self)
+            cache.add_channel(channel)
 
     def _update_with_data(self, data: typing.Dict[str, typing.Any]) -> None:
         # I'm documenting these attributes here for future reference when we
         # eventually implement these features.
         #
         # - permissions
-        # - roles
         # - emojis
         # - voice_states
-        # - members
-        # - channels
         # - threads
         # - presences
         # - welcome_screen
@@ -280,23 +305,18 @@ class Guild(BaseModel):
         self.public_updates_channel_id = get_optional_snowflake(data, "public_updates_channel_id")
 
     @property
-    def cache(self) -> typing.Optional[GuildCache]:
-        r"""Returns the cache handler associated to this guild.
-
-        This property would return ``None`` if guild is not cacheable i.e
-        when the guild is not obtained by the gateway. For example when
-        obtaining a guild through :meth:`Client.fetch_guild`, This property
-        would be ``None`` for resulting guild.
+    def cache(self) -> GuildCache:
+        """Returns the cache handler associated to this guild.
 
         Returns
         -------
-        Optional[:class:`GuildCache`]
+        :class:`GuildCache`
         """
         return self._cache
 
     @property
     def vanity_invite_url(self) -> typing.Optional[str]:
-        r"""The vanity invite URL for the guild. If guild has no
+        """The vanity invite URL for the guild. If guild has no
         vanity invite set, ``None`` is returned.
 
         Returns
@@ -310,7 +330,7 @@ class Guild(BaseModel):
 
     @property
     def shard_id(self) -> int:
-        r"""The *computed* shard ID for this guild.
+        """The *computed* shard ID for this guild.
 
         Note that the value returned by this property is just computed
         using the guild ID and total shards count of the bound client and
@@ -327,7 +347,7 @@ class Guild(BaseModel):
 
     @property
     def shard(self) -> typing.Optional[Shard]:
-        r"""The shard associated to this guild.
+        """The shard associated to this guild.
 
         This can be ``None`` in some cases, See :attr:`.shard_id` documentation
         for more information. This is equivalent to calling :meth:`Client.get_shard`
@@ -339,8 +359,23 @@ class Guild(BaseModel):
         """
         return self._client.get_shard(self.shard_id)
 
+    @property
+    def default_role(self) -> typing.Optional[Role]:
+        """The default (@everyone) role of this guild.
+
+        This property returns the result of :meth:`GuildCache.get_role`
+        with ``role_id`` set to the guild ID. This returns ``None``
+        for the guilds fetched over REST API.
+
+        Returns
+        -------
+        Optional[:class:`Role`]
+        """
+        role_id = self.id
+        return self._cache.get_role(role_id)
+
     def icon_url(self, extension: str = None, size: int = None) -> typing.Optional[str]:
-        r"""Returns the icon URL for this guild.
+        """Returns the icon URL for this guild.
 
         If guild has no custom icon set, ``None`` is returned.
 
@@ -370,12 +405,18 @@ class Guild(BaseModel):
         """
         if self.icon is None:
             return None
+        if extension is None:
+            extension = "gif" if self.is_icon_animated() else "png"
 
-        extension = "gif" if self.is_icon_animated() else "png"
-        return create_cdn_url(f"/icons/{self.id}/{self.icon}", extension=extension, size=size)
+        return create_cdn_url(
+            f"/icons/{self.id}/{self.icon}",
+            extension=extension,
+            size=size,
+            valid_exts=BASIC_EXTS,
+        )
 
     def banner_url(self, extension: str = None, size: int = None) -> typing.Optional[str]:
-        r"""Returns the banner URL for this guild.
+        """Returns the banner URL for this guild.
 
         If guild has no custom banner set, ``None`` is returned.
 
@@ -402,16 +443,18 @@ class Guild(BaseModel):
         """
         if self.banner is None:
             return
+        if extension is None:
+            extension = "png"
 
         return create_cdn_url(
             f"/banners/{self.id}/{self.banner}",
-            extension=extension or "png",
+            extension=extension,
             size=size,
-            valid_exts=["jpg", "jpeg", "png", "webp"] # Doesn't support GIF.
+            valid_exts=BASIC_STATIC_EXTS,
         )
 
     def splash_url(self, extension: str = None, size: int = None) -> typing.Optional[str]:
-        r"""Returns the splash URL for this guild.
+        """Returns the splash URL for this guild.
 
         If guild has no custom splash set, ``None`` is returned.
 
@@ -438,16 +481,18 @@ class Guild(BaseModel):
         """
         if self.splash is None:
             return
+        if extension is None:
+            extension = "png"
 
         return create_cdn_url(
             f"/splashes/{self.id}/{self.splash}",
-            extension=extension or "png",
+            extension=extension,
             size=size,
-            valid_exts=["jpg", "jpeg", "png", "webp"] # Doesn't support GIF.
+            valid_exts=BASIC_STATIC_EXTS,
         )
 
     def discovery_splash_url(self, extension: str = None, size: int = None) -> typing.Optional[str]:
-        r"""Returns the discovery splash URL for this guild.
+        """Returns the discovery splash URL for this guild.
 
         If guild has no custom discovery splash set, ``None`` is returned.
 
@@ -474,16 +519,18 @@ class Guild(BaseModel):
         """
         if self.discovery_splash is None:
             return
+        if extension is None:
+            extension = "png"
 
         return create_cdn_url(
             f"/splashes/{self.id}/{self.discovery_splash}",
-            extension=extension or "png",
+            extension=extension,
             size=size,
-            valid_exts=["jpg", "jpeg", "png", "webp"] # Doesn't support GIF.
+            valid_exts=BASIC_STATIC_EXTS,
         )
 
     def is_icon_animated(self) -> bool:
-        r"""Indicates whether the guild has animated icon.
+        """Indicates whether the guild has animated icon.
 
         Having no custom icon set will also return ``False``.
 
@@ -499,7 +546,7 @@ class Guild(BaseModel):
     # API calls
 
     async def leave(self) -> None:
-        r"""Leaves the guild.
+        """Leaves the guild.
 
         Raises
         ------
@@ -509,3 +556,259 @@ class Guild(BaseModel):
             HTTP request failed.
         """
         await self._rest.leave_guild(guild_id=self.id)
+
+    # Roles
+
+    async def fetch_roles(self) -> typing.List[Role]:
+        """Fetches the list of roles associated to this guild.
+
+        Returns
+        -------
+        List[:class:`Role`]
+            The list of fetched roles.
+
+        Raises
+        ------
+        HTTPException
+            HTTPs request failed.
+        """
+        roles = await self._rest.get_roles(guild_id=self.id)
+        return [Role(role, guild=self) for role in roles]
+
+    async def create_role(self, *,
+        name: str = None,
+        permissions: Permissions = None,
+        color: int = None,
+        hoist: bool = None,
+        icon: bytes = None,
+        unicode_emoji: str = None,
+        mentionable: bool = None,
+        reason: str = None,
+    ) -> Role:
+        """Creates a role in this guild.
+
+        This operation requires the :attr:`~Permissions.manage_roles` permission
+        for the client user in the guild.
+
+        Parameters
+        ----------
+        name: :class:`builtins.str`
+            The name of this role. Defaults to ``"new role"``.
+        permissions: :class:`Permissions`
+            The permissions for this role. Defaults to @everyone role's permissions
+            in the guild.
+        color: :class:`builtins.int`
+            The color value of this role.
+        hoist: :class:`builtins.bool`
+            Whether this role should appear hoisted from other roles.
+        icon: :class:`builtins.bytes`
+            The bytes representing the icon of this role. The guild
+            must have ``ROLES_ICON`` feature to set this. This parameter
+            cannot be mixed with ``unicode_emoji``.
+        unicode_emoji: :class:`builtins.str`
+            The unicode emoji used as icon for this role. The guild
+            must have ``ROLES_ICON`` feature to set this. This
+            parameter cannot be mixed with ``icon``.
+        mentionable: :class:`builtins.bool`
+            Whether this role is mentionable.
+        reason: :class:`builtins.str`
+            The reason for performing this action that shows up on
+            the audit log entry.
+
+        Returns
+        -------
+        :class:`Role`
+            The created role.
+
+        Raises
+        ------
+        HTTPForbidden
+            You are missing the :attr:`~Permissions.manage_roles` permissions.
+        HTTPException
+            The creation failed.
+        """
+        json = {}
+
+        if name is not None:
+            json["name"] = name
+        if permissions is not None:
+            json["permissions"] = str(permissions.value)
+        if color is not None:
+            json["color"] = color
+        if hoist is not None:
+            json["hoist"] = hoist
+        if icon is not None:
+            json["icon"] = get_image_data(icon)
+        if unicode_emoji is not None:
+            json["unicode_emoji"] = unicode_emoji
+        if mentionable is not None:
+            json["mentionable"] = mentionable
+
+        data = await self._rest.create_role(guild_id=self.id, json=json, reason=reason)
+        return Role(data, guild=self)
+
+    async def fetch_member(self, user_id: int) -> GuildMember:
+        """Fetches a member from this guild for the provided user ID.
+
+        Parameters
+        ----------
+        user_id: :class:`builtins.int`
+            The ID of user to get member for.
+
+        Raises
+        ------
+        HTTPNotFound
+            Member not found.
+        HTTPException
+            Failed to fetch the member.
+
+        Returns
+        -------
+        :class:`GuildMember`
+            The requested member.
+        """
+        data = await self._rest.get_guild_member(guild_id=self.id, user_id=user_id)
+        return GuildMember(data, guild=self)
+
+    async def search_members(self, query: str, *, limit: int = 1) -> typing.List[GuildMember]:
+        """Fetches the members whose username or nickname start with the provided query.
+
+        Parameters
+        ----------
+        query: :class:`builtins.str`
+            The query to search with.
+        limit: :class:`builtins.int`
+            The maximum number of members to return. Defaults to ``1``. Provided
+            integer cannot be larger then ``1000``.
+
+        Raises
+        ------
+        HTTPException
+            The fetching failed.
+
+        Returns
+        -------
+        List[:class:`GuildMember`]
+        """
+        if limit < 1 or limit > 1000:
+            raise ValueError("Parameter 'limit' cannot be lesser then 0 or greater then 1000.")
+
+        params = {"query": query, "limit": limit}
+        data = await self._rest.search_guild_members(guild_id=self.id, params=params)
+        return [GuildMember(member, guild=self) for member in data]
+
+    async def fetch_channels(self) -> typing.List[GuildChannel]:
+        """Fetches the list of all channels of this guild.
+
+        Returns
+        -------
+        List[:class:`GuildChannel`]
+
+        Raises
+        ------
+        HTTPException
+            Failed to fetch the channels.
+        """
+        data = await self._rest.get_guild_channels(guild_id=self.id)
+        ret = []
+
+        for channel in data:
+            cls = _guild_channel_factory(channel["type"])
+            ret.append(cls(channel, guild=self)) # should always be a subclass of GuildChannel
+
+        return ret
+
+    async def create_channel(
+        self,
+        type: int,
+        name: str,
+        *,
+        bitrate: int = UNDEFINED,
+        position: int = UNDEFINED,
+        nsfw: bool = UNDEFINED,
+        topic: typing.Optional[str] = UNDEFINED,
+        user_limit: typing.Optional[int] = UNDEFINED,
+        slowmode_delay: typing.Optional[str] = UNDEFINED,
+        parent: typing.Optional[CategoryChannel] = UNDEFINED,
+        reason: typing.Optional[str] = None,
+    ):
+        """Creates a channel in the guild.
+
+        The ``name`` and ``type`` parameters are the only parameters that are
+        required. Other parameters are optional.
+
+        Requires the :attr:`~Permissions.manage_channels` permissions in the relevant
+        guild to perform this action.
+
+        Parameters
+        ----------
+        name: :class:`builtins.str`
+            The name of this channel.
+        type: :class:`builtins.int`
+            The type of this channel.
+        topic: :class:`builtins.str`
+            The topic of this channel. Only valid for news and text channels.
+        bitrate: :class:`builtins.int`
+            The bitrate of this channel. Only valid for voice channels.
+        user_limit: :class:`builtins.int`
+            The number of users that can connect to the channel at a time.
+            Only valid for voice channels.
+        slowmode_delay: :class:`builtins.int`
+            The slowmode delay of this channel. Only valid for text based
+            channels.
+        position: :class:`builtins.int`
+            The position of this channel in the channels list.
+        parent: :class:`CategoryChannel`
+            The category that this channel belongs to.
+        nsfw: :class:`builtins.bool`
+            Whether this channel is marked as NSFW.
+        reason: :class:`builtins.str`
+            The reason for creating the channel that appears on the audit log.
+
+        Returns
+        -------
+        :class:`GuildChannel`
+            The created channel.
+
+        Raises
+        ------
+        HTTPForbidden
+            Missing permissions.
+        HTTPBadRequest
+            Invalid data in the provided channel.
+        HTTPException
+            The creation failed.
+        """
+        json = {
+            "name": name,
+            "type": type,
+        }
+
+        if topic is not UNDEFINED:
+            json["topic"] = topic
+
+        if bitrate is not UNDEFINED:
+            json["bitrate"] = bitrate
+
+        if user_limit is not UNDEFINED:
+            json["user_limit"] = user_limit
+
+        if slowmode_delay is not UNDEFINED:
+            json["slowmode_delay"] = slowmode_delay
+
+        if position is not UNDEFINED:
+            json["position"] = position
+
+        if parent is not UNDEFINED:
+            json["parent_id"] = parent.id
+
+        if nsfw is not UNDEFINED:
+            json["nsfw"] = nsfw
+
+        data = await self._rest.create_guild_channel(
+            guild_id=self.id,
+            json=json,
+            reason=reason,
+        )
+        cls = _guild_channel_factory(data["type"])
+        return cls(data, guild=self)

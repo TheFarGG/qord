@@ -343,6 +343,7 @@ class Shard:
                     break
                 else:
                     if not recv:
+                        self._log(logging.INFO, "Shard is closing.")
                         self._running = False
                         return
 
@@ -367,6 +368,7 @@ class Shard:
             self._identified.clear()
             self._worker_task.cancel()
             self._running = False
+            self._worker_task = None
 
     async def _send_data(self, data: typing.Dict[str, typing.Any]) -> None:
         await self._websocket.send_str(json.dumps(data)) # type: ignore

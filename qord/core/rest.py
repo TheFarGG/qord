@@ -99,7 +99,7 @@ class RestClient:
 
         if requires_auth:
             headers["Authorization"] = f"Bot {token}"
-        if reason is not None and route.supports_reason:
+        if reason is not None:
             headers["X-Audit-Log-Reason"] = reason
 
         for attempt in range(self.max_retries):
@@ -165,6 +165,12 @@ class RestClient:
         data = await self.request(route)
         return data
 
+    async def create_dm(self, recipient_id: int):
+        route = Route("POST", "/users/@me/channels")
+        json = {"recipient_id": recipient_id}
+        data = await self.request(route, json=json)
+        return data
+
     # ---- Guilds ----
 
     async def get_guild(self, guild_id: int, with_counts: bool = False):
@@ -176,3 +182,164 @@ class RestClient:
     async def leave_guild(self, guild_id: int):
         route = Route("DELETE", "/users/@me/guilds/{guild_id}", guild_id=guild_id)
         await self.request(route)
+
+    # ---- Guilds Roles ----
+
+    async def get_roles(self, guild_id: int):
+        route = Route("GET", "/guilds/{guild_id}/roles", guild_id=guild_id)
+        data = await self.request(route)
+        return data
+
+    async def create_role(self, guild_id: int, json: typing.Dict[str, typing.Any], reason: str = None):
+        route = Route("POST", "/guilds/{guild_id}/roles", guild_id=guild_id)
+        data = await self.request(route, json=json, reason=reason)
+        return data
+
+    async def edit_role_positions(self, guild_id: int, json: typing.Dict[str, typing.Any], reason: str = None):
+        route = Route("PATCH", "/guilds/{guild_id}/roles", guild_id=guild_id)
+        data = await self.request(route, json=json, reason=reason)
+        return data
+
+    async def edit_role(self, guild_id: int, role_id: int, json: typing.Dict[str, typing.Any], reason: str = None):
+        route = Route(
+            "PATCH", "/guilds/{guild_id}/roles/{role_id}",
+            guild_id=guild_id, role_id=role_id
+        )
+        data = await self.request(route, json=json, reason=reason)
+        return data
+
+    async def delete_role(self, guild_id: int, role_id: int, reason: str = None):
+        route =  Route(
+            "DELETE", "/guilds/{guild_id}/roles/{role_id}",
+            guild_id=guild_id, role_id=role_id
+        )
+        await self.request(route, reason=reason)
+
+    # ---- Members ---- #
+
+    async def get_guild_member(self, guild_id: int, user_id: int):
+        route = Route(
+            "GET", "/guilds/{guild_id}/members/{user_id}",
+            guild_id=guild_id, user_id=user_id
+        )
+        data = await self.request(route)
+        return data
+
+    async def list_guild_members(self, guild_id: int, params: typing.Dict[str, typing.Any]):
+        route = Route("GET", "/guilds/{guild_id}/members", guild_id=guild_id)
+        data = await self.request(route, params=params)
+        return data
+
+    async def search_guild_members(self, guild_id: int, params: typing.Dict[str, typing.Any]):
+        route = Route("GET", "/guilds/{guild_id}/members/search", guild_id=guild_id)
+        data = await self.request(route, params=params)
+        return data
+
+    async def edit_guild_member(
+        self,
+        guild_id: int,
+        user_id: int,
+        json: typing.Dict[str, typing.Any],
+        reason: str = None
+    ):
+        route = Route("PATCH", "/guilds/{guild_id}/members/{user_id}", guild_id=guild_id, user_id=user_id)
+        data = await self.request(route, json=json, reason=reason)
+        return data
+
+    async def edit_client_guild_member(
+        self,
+        guild_id: int,
+        json: typing.Dict[str, typing.Any],
+        reason: str = None
+    ):
+        route = Route("PATCH", "/guilds/{guild_id}/members/@me", guild_id=guild_id)
+        data = await self.request(route, json=json, reason=reason)
+        return data
+
+    async def add_guild_member_role(
+        self,
+        guild_id: int,
+        user_id: int,
+        role_id: int,
+        reason: str = None
+    ):
+        route = Route(
+            "PUT", "/guilds/{guild_id}/members/{user_id}/roles/{role_id}",
+            guild_id=guild_id, user_id=user_id, role_id=role_id
+        )
+        data = await self.request(route, reason=reason)
+        return data
+
+    async def remove_guild_member_role(
+        self,
+        guild_id: int,
+        user_id: int,
+        role_id: int,
+        reason: str = None
+    ):
+        route = Route(
+            "DELETE", "/guilds/{guild_id}/members/{user_id}/roles/{role_id}",
+            guild_id=guild_id, user_id=user_id, role_id=role_id
+        )
+        data = await self.request(route, reason=reason)
+        return data
+
+    async def kick_guild_member(
+        self,
+        guild_id: int,
+        user_id: int,
+        reason: str = None
+    ):
+        route = Route(
+            "DELETE", "/guilds/{guild_id}/members/{user_id}",
+            guild_id=guild_id, user_id=user_id
+        )
+        data = await self.request(route, reason=reason)
+        return data
+
+    # --- Channels --- #
+
+    async def get_guild_channels(self, guild_id: int):
+        route = Route("GET", "/guilds/{guild_id}/channels", guild_id=guild_id)
+        data = await self.request(route)
+        return data
+
+    async def create_guild_channel(self, guild_id: int, json: typing.Dict[str, typing.Any], reason: str = None):
+        route = Route("POST", "/guilds/{guild_id}/channels", guild_id=guild_id)
+        data = await self.request(route, json=json, reason=reason)
+        return data
+
+    async def get_channel(self, channel_id: int):
+        route = Route("GET", "/channels/{channel_id}", channel_id=channel_id)
+        data = await self.request(route)
+        return data
+
+    async def delete_channel(self, channel_id: int, reason: str = None):
+        route = Route("DELETE", "/channels/{channel_id}", channel_id=channel_id)
+        data = await self.request(route, reason=reason)
+        return data
+
+    async def edit_channel(self, channel_id: int, json: typing.Dict[str, typing.Any], reason: str = None):
+        route = Route("PATCH", "/channels/{channel_id}", channel_id=channel_id)
+        data = await self.request(route, json=json, reason=reason)
+        return data
+
+    # --- Messages --- #
+
+    async def get_message(self, channel_id: int, message_id: int):
+        route = Route(
+            "GET", "/channels/{channel_id}/messages/{message_id}",
+            channel_id=channel_id, message_id=message_id
+        )
+        data = await self.request(route)
+        return data
+
+    async def get_pinned_messages(self, channel_id: int):
+        route = Route("GET", "/channels/{channel_id}/pins", channel_id=channel_id)
+        data = await self.request(route)
+        return data
+
+    async def send_message(self, channel_id: int, json: typing.Dict[str, typing.Any]):
+        route = Route("POST", "/channels/{channel_id}/messages", channel_id=channel_id)
+        data = await self.request(route, json=json)
+        return data
